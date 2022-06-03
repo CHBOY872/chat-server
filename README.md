@@ -1,6 +1,8 @@
 # chat-server
-The chat server was made by C++ language for Linux
+The chat server was made by C++ language for Linux.
+
 *The excample and idea of this project was got from book Andrey Stolyarov "Programming introduction to the profession 3 part".*
+
 Run a program on your PC and connect to this server using telnet
 
 ## Build a project
