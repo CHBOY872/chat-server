@@ -9,10 +9,11 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <string.h>
+#include <signal.h>
 #include "server.hpp"
 
 static const char join_msg[] = "joined to the chat.";
-static const char left_msg[] = "left the chat.";
+static const char left_msg[] = " left the chat.";
 static const char greetings_msg[] =
     "Welcome to the chat,\nplease write a name: ";
 static const char changed_name[] = "changed the name.";
@@ -133,10 +134,11 @@ ChatServer::~ChatServer()
 
 ChatServer *ChatServer::Start(EventHandler *handler_h, int port)
 {
-    int fd_s = socket(AF_INET, SOCK_STREAM, 0);
+    int fd_s, stat, opt;
+    fd_s = socket(AF_INET, SOCK_STREAM, 0);
     if (-1 == fd_s)
         return 0;
-    int opt = 1;
+    opt = 1;
     setsockopt(fd_s, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
     struct sockaddr_in addr;
@@ -144,10 +146,12 @@ ChatServer *ChatServer::Start(EventHandler *handler_h, int port)
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
 
-    if (-1 == bind(fd_s, (struct sockaddr *)&addr, sizeof(addr)))
+    stat = bind(fd_s, (struct sockaddr *)&addr, sizeof(addr));
+    if (-1 == stat)
         return 0;
 
-    if (-1 == listen(fd_s, current_max_lcount))
+    stat = listen(fd_s, current_max_lcount);
+    if (-1 == stat)
         return 0;
 
     return new ChatServer(handler_h, fd_s);
@@ -186,10 +190,9 @@ void ChatServer::SendTo(const char *msg, const char *to_name)
         if (strcmp(to_name, p->s->name) == 0)
         {
             char *tomsg =
-                new char[sizeof(sizeof(private_message_from) + 4 +
-                                strlen(msg) + strlen(p->s->name))];
-            sprintf(tomsg, "%s%s: %s\n",
-                    private_message_from, p->s->name, msg);
+                new char[sizeof(private_message_from) +
+                         strlen(msg) + strlen(to_name) + 4];
+            sprintf(tomsg, "%s%s: %s\n", private_message_from, to_name, msg);
             p->s->Send(tomsg);
             delete[] tomsg;
             break;
@@ -201,9 +204,10 @@ void ChatServer::Handle(bool r, bool w)
 {
     if (!r)
         return;
+    int fd_d = -1;
     struct sockaddr_in addr;
-    socklen_t len;
-    int fd_d = accept(GetFd(), (struct sockaddr *)&addr, &len);
+    socklen_t len = sizeof(addr);
+    fd_d = accept(GetFd(), (struct sockaddr *)&addr, &len);
     if (-1 == fd_d)
         return;
 
@@ -260,7 +264,7 @@ void ChatSession::Read()
     }
     int i;
 
-    char *msg = new char[rc];
+    char *msg = new char[rc + 1];
 
     for (i = 0; i < rc; i++)
     {
@@ -296,35 +300,30 @@ bool ChatSession::HandleLine(const char *str)
         cmd[i] = 0;
         if (strcmp(cmd, "/s") == 0)
         {
-            char *to_name = 0, *to_msg = 0;
-            const char *ptr = strstr(str, "<");
-            if (ptr && strstr(str, ">"))
+            const char *ptr_start = strstr(str, "<");
+            const char *ptr_end = strstr(str, "> ");
+            if (ptr_start && ptr_end)
             {
-                j = 0;
-                while (ptr[j + 1] != '>' && ptr[j + 1])
-                    j++;
-                to_name = new char[j + 1];
-                to_msg = new char[str_len - 6 - j + 1];
-                if (sscanf(str, "/s <%s> %s", to_name, to_msg) == EOF)
-                    Send("Usage: /s <name to message> message....\n");
-                else
+                for (j = 0; *(ptr_start + 1 + j) != *(ptr_end); j++)
                 {
-                    to_name[j] = 0;
-                    ptr = strstr(str, "> ");
-                    j = 0;
-                    while (*(ptr + 2 + j))
-                    {
-                        to_msg[j] = ptr[2 + j];
-                        j++;
-                    }
-                    to_msg[j] = 0;
-                    the_master->SendTo(to_msg, to_name);
                 }
+                int to_name_len = j + 1;
+                int to_msg_len = str_len - j - 5;
+                char *to_name = new char[to_name_len];
+                char *to_msg = new char[to_msg_len];
 
-                delete[] to_name;
+                for (j = 0; *(ptr_start + 1 + j) != *(ptr_end); j++)
+                    to_name[j] = ptr_start[j + 1];
+                to_name[j] = 0;
+
+                for (j = 0; *(ptr_end + 2 + j); j++)
+                    to_msg[j] = ptr_end[2 + j];
+                to_msg[j] = 0;
+
+                the_master->SendTo(to_msg, to_name);
+
                 delete[] to_msg;
-                if (!ptr[j + 1])
-                    Send("Usage: /s <name to message> message....\n");
+                delete[] to_name;
             }
             else
                 Send("Usage: /s <name to message> message....\n");
@@ -347,7 +346,7 @@ bool ChatSession::HandleLine(const char *str)
             return false;
         }
 
-        name = new char[str_len];
+        name = new char[str_len + 1];
         strcpy(name, str);
         char *gmsg = new char[str_len + sizeof(join_msg) + 3];
         sprintf(gmsg, "%s %s\n", name, join_msg);
@@ -356,7 +355,8 @@ bool ChatSession::HandleLine(const char *str)
     }
     else
     {
-        char *smsg = new char[str_len + strlen(name) + 5];
+        int len_name = strlen(name);
+        char *smsg = new char[str_len + len_name + 5];
         sprintf(smsg, "<%s> %s\n", name, str);
         the_master->SendAll(smsg);
         delete[] smsg;
