@@ -182,7 +182,7 @@ void ChatServer::SendAll(const char *msg, ChatSession *except)
             p->s->Send(msg);
 }
 
-void ChatServer::SendTo(const char *msg, const char *to_name)
+void ChatServer::SendTo(const char *msg, const char *to_name, ChatSession *from)
 {
     item *p;
     for (p = first; p; p = p->next)
@@ -191,8 +191,8 @@ void ChatServer::SendTo(const char *msg, const char *to_name)
         {
             char *tomsg =
                 new char[sizeof(private_message_from) +
-                         strlen(msg) + strlen(to_name) + 4];
-            sprintf(tomsg, "%s%s: %s\n", private_message_from, to_name, msg);
+                         strlen(msg) + strlen(from->name) + 4];
+            sprintf(tomsg, "%s%s: %s\n", private_message_from, from->name, msg);
             p->s->Send(tomsg);
             delete[] tomsg;
             break;
@@ -320,7 +320,7 @@ bool ChatSession::HandleLine(const char *str)
                     to_msg[j] = ptr_end[2 + j];
                 to_msg[j] = 0;
 
-                the_master->SendTo(to_msg, to_name);
+                the_master->SendTo(to_msg, to_name, this);
 
                 delete[] to_msg;
                 delete[] to_name;
