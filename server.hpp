@@ -81,7 +81,7 @@ public:
     virtual ~ChatServer();
     static ChatServer *Start(EventHandler *handler_h, int port);
     void RemoveSession(ChatSession *s);
-    void SendTo(const char *msg, const char *to_name);
+    void SendTo(const char *msg, const char *to_name, ChatSession *from);
     void SendAll(const char *msg, ChatSession *except = 0);
 
 private:
